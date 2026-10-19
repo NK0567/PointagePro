@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # PointagePro
 
 Application web de **pointage sécurisé** pour l'entreprise : chaque employé valide sa présence avec **son empreinte digitale**, **uniquement depuis son lieu de service**, déclare ses tâches le matin et coche celles qu'il a faites le soir. Les tâches non terminées passent automatiquement au lendemain. L'administration suit tout en temps réel et exporte l'état de la journée (Excel, CSV, PDF).
@@ -85,3 +86,6 @@ pointagePro/
 - [Architecture technique](docs/architecture.md) — biométrie, géolocalisation, données, API, sécurité
 - [Méthode de réalisation](docs/methode-realisation.md) — démarche Agile/Scrum, sprints, pilote
 - [Mise en ligne](docs/deploiement.md) — VPS Linux, Nginx, HTTPS, PM2, sauvegardes
+=======
+# PointagePro
+>>>>>>> 19133d9cf61c2bce95d6332641805b3e07d002e8
