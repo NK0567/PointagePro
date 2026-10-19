@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --color-brand-50: #eff5ff;
+  --color-brand-100: #dbe8fe;
+  --color-brand-200: #bfd5fe;
+  --color-brand-500: #3b7cf6;
+  --color-brand-600: #1f63e8;
+  --color-brand-700: #1d4ed8;
+  --color-brand-800: #1e40af;
+  --color-navy-800: #0f2557;
+  --color-navy-900: #0b1b44;
+  --color-navy-950: #071233;
+}
+
+html, body, #root { height: 100%; }
+body {
+  background: #f4f7fc;
+  color: #0f172a;
+  -webkit-font-smoothing: antialiased;
+}
+
+.card { @apply rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]; }
+.input {
+  @apply w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none transition
+    placeholder:text-slate-400 focus:border-brand-600 focus:ring-4 focus:ring-brand-100 disabled:bg-slate-50;
+}
+.label { @apply mb-1.5 block text-sm font-medium text-slate-700; }
+.th { @apply px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500; }
+.td { @apply px-4 py-3 text-sm text-slate-700; }
+
+.fp-pulse { animation: fp-pulse 1.6s ease-in-out infinite; }
+@keyframes fp-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(31, 99, 232, 0.35); }
+  50% { box-shadow: 0 0 0 18px rgba(31, 99, 232, 0); }
+}
+
+.leaflet-container { font-family: inherit; border-radius: 1rem; }

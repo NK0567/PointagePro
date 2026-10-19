@@ -1,0 +1,278 @@
+// PointagePro — schéma de données
+// Règles : les événements de pointage ne sont jamais supprimés (annulation/correction tracée),
+// heures stockées en UTC, aucune empreinte brute stockée (WebAuthn : clé publique uniquement).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN_RH
+  AGENT
+  CHEF
+  EMPLOYE
+  DIRECTION
+}
+
+enum AccountStatus {
+  INVITED // fiche créée par les RH, code d'invitation délivré
+  PENDING // appareil enregistré, en attente de validation
+  ACTIVE
+  SUSPENDED
+}
+
+enum EventType {
+  ARRIVAL
+  BREAK_START
+  BREAK_END
+  DEPARTURE
+}
+
+enum EventSource {
+  MOBILE // téléphone de l'employé (WebAuthn + GPS)
+  KIOSK // poste partagé supervisé par l'agent de pointage
+  TERMINAL // terminal biométrique matériel (API)
+  CORRECTION // correction validée par un responsable
+}
+
+enum TaskPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+  CANCELLED
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model Site {
+  id               Int     @id @default(autoincrement())
+  name             String
+  address          String?
+  latitude         Float
+  longitude        Float
+  radiusM          Int     @default(100)
+  maxAccuracyM     Int     @default(80) // précision GPS maximale acceptée
+  timezone         String  @default("Africa/Douala")
+  startTime        String  @default("08:00")
+  endTime          String  @default("17:00")
+  lateToleranceMin Int     @default(10)
+  workDays         String  @default("1,2,3,4,5") // 1 = lundi … 7 = dimanche
+  maxBreaks        Int     @default(2)
+  active           Boolean @default(true)
+  createdAt        DateTime @default(now())
+
+  users     User[]
+  events    AttendanceEvent[]
+  terminals TerminalDevice[]
+}
+
+model User {
+  id               Int           @id @default(autoincrement())
+  matricule        String        @unique
+  firstName        String
+  lastName         String
+  email            String?       @unique
+  phone            String?
+  passwordHash     String? // comptes d'administration uniquement
+  pinHash          String? // poste partagé (kiosque) — complément supervisé
+  role             Role          @default(EMPLOYE)
+  status           AccountStatus @default(INVITED)
+  jobTitle         String
+  department       String?
+  hiredAt          DateTime?
+  siteId           Int?
+  managerId        Int?
+  inviteCode       String?       @unique
+  inviteExpiresAt  DateTime?
+  failedLogins     Int           @default(0)
+  lockedUntil      DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  site           Site?             @relation(fields: [siteId], references: [id])
+  manager        User?             @relation("Team", fields: [managerId], references: [id])
+  team           User[]            @relation("Team")
+  authenticators Authenticator[]
+  events         AttendanceEvent[] @relation("EventUser")
+  recordedEvents AttendanceEvent[] @relation("EventRecorder")
+  rejections     PunchRejection[]
+  tasks          Task[]            @relation("TaskAssignee")
+  createdTasks   Task[]            @relation("TaskCreator")
+  notifications  Notification[]
+  corrections    CorrectionRequest[] @relation("CorrectionUser")
+  reviewed       CorrectionRequest[] @relation("CorrectionReviewer")
+}
+
+model Authenticator {
+  id           Int       @id @default(autoincrement())
+  userId       Int
+  credentialId String    @unique @db.VarChar(512)
+  publicKey    Bytes
+  counter      BigInt    @default(0)
+  transports   String?
+  deviceLabel  String    @default("Appareil")
+  backedUp     Boolean   @default(false)
+  revoked      Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  lastUsedAt   DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AttendanceEvent {
+  id            Int         @id @default(autoincrement())
+  userId        Int
+  siteId        Int?
+  type          EventType
+  occurredAt    DateTime // heure officielle (serveur, ou terminal pour le hors-ligne)
+  receivedAt    DateTime    @default(now())
+  workDate      String      @db.VarChar(10) // AAAA-MM-JJ dans le fuseau du site
+  source        EventSource
+  latitude      Float?
+  longitude     Float?
+  accuracyM     Float?
+  distanceM     Float?
+  offline       Boolean     @default(false)
+  needsReview   Boolean     @default(false)
+  deviceEventId String?     @unique // idempotence de la synchronisation terminal
+  recordedById  Int? // agent (kiosque) ou responsable (correction)
+  reason        String?
+  voided        Boolean     @default(false)
+  voidReason    String?
+
+  user       User  @relation("EventUser", fields: [userId], references: [id])
+  recordedBy User? @relation("EventRecorder", fields: [recordedById], references: [id])
+  site       Site? @relation(fields: [siteId], references: [id])
+
+  @@index([userId, workDate])
+  @@index([workDate])
+}
+
+model PunchRejection {
+  id        Int       @id @default(autoincrement())
+  userId    Int
+  type      EventType
+  code      String // OUT_OF_ZONE, LOW_ACCURACY, NO_SITE, SEQUENCE, AUTH…
+  message   String
+  latitude  Float?
+  longitude Float?
+  accuracyM Float?
+  distanceM Float?
+  source    EventSource
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([createdAt])
+}
+
+model Task {
+  id           Int          @id @default(autoincrement())
+  title        String
+  description  String?      @db.Text
+  priority     TaskPriority @default(NORMAL)
+  status       TaskStatus   @default(TODO)
+  assigneeId   Int
+  createdById  Int
+  plannedDate  String       @db.VarChar(10) // jour où la tâche apparaît dans la liste
+  originalDate String       @db.VarChar(10) // date initialement prévue
+  dueDate      String?      @db.VarChar(10)
+  carryCount   Int          @default(0)
+  comment      String?      @db.Text
+  completedAt  DateTime?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  assignee  User          @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  createdBy User          @relation("TaskCreator", fields: [createdById], references: [id])
+  history   TaskHistory[]
+
+  @@index([assigneeId, plannedDate])
+}
+
+model TaskHistory {
+  id         Int       @id @default(autoincrement())
+  taskId     Int
+  action     String // CREATED, STATUS, CARRIED, REASSIGNED, COMMENT
+  fromValue  String?
+  toValue    String?
+  comment    String?
+  actorId    Int?
+  createdAt  DateTime  @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+}
+
+model CorrectionRequest {
+  id            Int           @id @default(autoincrement())
+  userId        Int
+  workDate      String        @db.VarChar(10)
+  type          EventType
+  requestedTime String        @db.VarChar(5) // HH:MM heure locale du site
+  reason        String        @db.Text
+  status        RequestStatus @default(PENDING)
+  reviewerId    Int?
+  reviewComment String?
+  reviewedAt    DateTime?
+  createdAt     DateTime      @default(now())
+
+  user     User  @relation("CorrectionUser", fields: [userId], references: [id])
+  reviewer User? @relation("CorrectionReviewer", fields: [reviewerId], references: [id])
+}
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  level     String   @default("info") // info, success, warning, danger
+  title     String
+  body      String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, read])
+}
+
+model TerminalDevice {
+  id         Int       @id @default(autoincrement())
+  name       String
+  siteId     Int
+  keyPrefix  String    @db.VarChar(12)
+  keyHash    String
+  active     Boolean   @default(true)
+  lastSeenAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  site Site @relation(fields: [siteId], references: [id])
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  actorId   Int?
+  action    String
+  entity    String?
+  entityId  String?
+  details   Json?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
